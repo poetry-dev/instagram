@@ -7,7 +7,7 @@ defmodule InstagramWeb.HomeLive do
   @impl true
   def render(%{loading: true} = assigns) do
     ~H"""
-    Instagram is loading ...
+    Instagram 正在加载中 ...
     """
   end
 
@@ -39,16 +39,18 @@ defmodule InstagramWeb.HomeLive do
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
+      Phoenix.PubSub.subscribe(Instagram.PubSub, "posts")
+
     form =
-    %Post{}
-    |> Post.changeset(%{})
-    |> to_form(as: "post")
+      %Post{}
+      |> Post.changeset(%{})
+      |> to_form(as: "post")
 
   socket =
-  socket
-  |> assign(form: form, loading: false)
-  |> allow_upload(:image, accept: ~w(.png .jpg), max_entries: 1)
-  |> stream(:posts, Posts.list_posts())
+    socket
+    |> assign(form: form, loading: false)
+    |> allow_upload(:image, accept: ~w(.png .jpg), max_entries: 1)
+    |> stream(:posts, Posts.list_posts())
 
   {:ok, socket}
     else
@@ -69,25 +71,41 @@ defmodule InstagramWeb.HomeLive do
     |> Map.put("image_path", List.first(consume_files(socket)))
     |> Posts.save()
     |> case do
-      {:ok, _post} ->
+      {:ok, post} ->
         socket =
-        socket
-        |> put_flash(:info, "帖子发布成功！")
-        |> push_navigate(to: ~p"/home")
+          socket
+          |> put_flash(:info, "帖子发布成功！")
+          |> push_navigate(to: ~p"/home")
 
-        {:noreply, socket}
+      Phoenix.PubSub.broadcast(Instagram.PubSub, "posts", {:new, Map.put(post, :user, user)})
 
-      {:error, _changeset} ->
+      {:noreply, socket}
+
+    {:error, _changeset} ->
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_info({:new, post}, socket) do
+    socket =
+      socket
+      |> put_flash(:info, "#{post.user.email} 刚刚发布新帖！")
+      |> stream_insert(:posts, post, at: 0)
+
     {:noreply, socket}
-      end
   end
 
   defp consume_files(socket) do
-    consume_uploaded_entries(socket, :image, fn %{path: path}, _entry ->
-      dest = Path.join([:code.priv_dir(:instagram), "static", "uploads", Path.basename(path)])
-      File.cp!(path, dest)
+    consume_uploaded_entries(
+      socket,
+      :image,
+      fn %{path: path}, _entry ->
+        dest = Path.join([:code.priv_dir(:instagram), "static", "uploads", Path.basename(path)])
+        File.cp!(path, dest)
 
-      {:postpone, ~p"/uploads/#{Path.basename(dest)}"}
-  end)
-end
+        {:postpone, ~p"/uploads/#{Path.basename(dest)}"}
+      end
+      )
+  end
 end

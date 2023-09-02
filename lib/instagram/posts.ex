@@ -6,10 +6,10 @@ defmodule Instagram.Posts do
 
   def list_posts do
     query =
-    from p in Post,
-    select: p,
-    order_by: [desc: :inserted_at],
-    preload: [:user]
+      from p in Post,
+      select: p,
+      order_by: [desc: :inserted_at],
+      preload: [:user]
 
     Repo.all(query)
   end
